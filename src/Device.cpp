@@ -7,8 +7,8 @@
 
 #include <cstdio>
 
-#include "stb_image.h"
-#include "stb_image_write.h"
+#include "../dependencies/stb_image.h"
+#include "../dependencies/stb_image_write.h"
 
 #include "Device.h"
 
