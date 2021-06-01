@@ -2,7 +2,7 @@
 
 int main() {
     Device::LoadImage("../source.png");
-    Device::ExecuteProgram("../main.cl", 2);
-    Device::SaveImage("../afterBlur.png", "../afterEdge.png");
+    Device::ExecuteProgram("../main.cl", 0, 3);
+    Device::SaveImage("../output1.png", "../output2.png");
     return 0;
 }

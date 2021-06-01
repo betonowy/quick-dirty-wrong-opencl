@@ -34,15 +34,15 @@ Device::Device() {
 Device::~Device() {
     clFlush(clCommandQueue);
     clFinish(clCommandQueue);
-    clReleaseKernel(clKernelBlur);
+    clReleaseKernel(clKernelEdge);
     clReleaseProgram(clProgram);
     clReleaseMemObject(clMemSrc);
-    clReleaseMemObject(clMemDstBlur);
+    clReleaseMemObject(clMemDst);
     clReleaseCommandQueue(clCommandQueue);
     clReleaseContext(clContext);
 }
 
-void Device::ExecuteProgram(const char *path, int blurParam) {
+void Device::ExecuteProgram(const char *path, int blurParamFirst, int blurParamSecond) {
     auto &dev = Get();
     cl_int errorCode;
 
@@ -70,13 +70,7 @@ void Device::ExecuteProgram(const char *path, int blurParam) {
     dev.clMemSrc = clCreateBuffer(dev.clContext, CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
                                   imageSize * sizeof(char), dev.imageData.data(), &errorCode);
 
-    dev.clMemBlurParam = clCreateBuffer(dev.clContext, CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
-                                  sizeof(blurParam), &blurParam, &errorCode);
-
-    dev.clMemDstBlur = clCreateBuffer(dev.clContext, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                                      imageSize * sizeof(char), nullptr, &errorCode);
-
-    dev.clMemDstEdge = clCreateBuffer(dev.clContext, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+    dev.clMemDst = clCreateBuffer(dev.clContext, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
                                       imageSize * sizeof(char), nullptr, &errorCode);
 
     dev.clProgram = clCreateProgramWithSource(dev.clContext, 1, (const char **) &source, nullptr, &errorCode);
@@ -94,44 +88,38 @@ void Device::ExecuteProgram(const char *path, int blurParam) {
 
     delete[] source;
 
-    dev.clKernelBlur = clCreateKernel(dev.clProgram, "processBlur", &errorCode);
     dev.clKernelEdge = clCreateKernel(dev.clProgram, "processEdge", &errorCode);
 
     if (errorCode) fprintf(stderr, "Couldn't create kernel\n");
 
-    if (clSetKernelArg(dev.clKernelBlur, 0, sizeof(cl_mem), &dev.clMemSrc))
-        fprintf(stderr, "Couldn't set src parameter\n");
-
-    if (clSetKernelArg(dev.clKernelBlur, 1, sizeof(cl_mem), &dev.clMemDstBlur))
-        fprintf(stderr, "Couldn't set dst parameter\n");
-
-    if (clSetKernelArg(dev.clKernelBlur, 2, sizeof(cl_mem), &dev.clMemBlurParam))
-        fprintf(stderr, "Couldn't set blur parameter\n");
-
     if (clSetKernelArg(dev.clKernelEdge, 0, sizeof(cl_mem), &dev.clMemSrc))
         fprintf(stderr, "Couldn't set src parameter\n");
 
-    if (clSetKernelArg(dev.clKernelEdge, 1, sizeof(cl_mem), &dev.clMemDstEdge))
+    if (clSetKernelArg(dev.clKernelEdge, 1, sizeof(cl_mem), &dev.clMemDst))
         fprintf(stderr, "Couldn't set dst parameter\n");
 
-    if (clSetKernelArg(dev.clKernelEdge, 2, sizeof(cl_mem), &dev.clMemBlurParam))
+    if (clSetKernelArg(dev.clKernelEdge, 2, sizeof(int), &blurParamFirst))
         fprintf(stderr, "Couldn't set blur parameter\n");
 
     const size_t globalSize = imageSize;
-    if (clEnqueueNDRangeKernel(dev.clCommandQueue, dev.clKernelBlur, 1, nullptr, &globalSize,
-                               nullptr, 0, nullptr, nullptr))
-        fprintf(stderr, "Couldn't enqueue blur kernel\n");
-
-    if (clEnqueueReadBuffer(dev.clCommandQueue, dev.clMemDstBlur, CL_TRUE, 0, imageSize * sizeof(char),
-                            dev.imageDataBlur.data(), 0, nullptr, nullptr))
-        fprintf(stderr, "Couldn't enqueue blur read\n");
 
     if (clEnqueueNDRangeKernel(dev.clCommandQueue, dev.clKernelEdge, 1, nullptr, &globalSize,
                                nullptr, 0, nullptr, nullptr))
         fprintf(stderr, "Couldn't enqueue edge kernel\n");
 
-    if (clEnqueueReadBuffer(dev.clCommandQueue, dev.clMemDstEdge, CL_TRUE, 0, imageSize * sizeof(char),
-                            dev.imageDataEdge.data(), 0, nullptr, nullptr))
+    if (clEnqueueReadBuffer(dev.clCommandQueue, dev.clMemDst, CL_TRUE, 0, imageSize * sizeof(char),
+                            dev.imageDataEdge1.data(), 0, nullptr, nullptr))
+        fprintf(stderr, "Couldn't enqueue edge read\n");
+
+    if (clSetKernelArg(dev.clKernelEdge, 2, sizeof(int), &blurParamSecond))
+        fprintf(stderr, "Couldn't set blur parameter\n");
+
+    if (clEnqueueNDRangeKernel(dev.clCommandQueue, dev.clKernelEdge, 1, nullptr, &globalSize,
+                               nullptr, 0, nullptr, nullptr))
+        fprintf(stderr, "Couldn't enqueue edge kernel\n");
+
+    if (clEnqueueReadBuffer(dev.clCommandQueue, dev.clMemDst, CL_TRUE, 0, imageSize * sizeof(char),
+                            dev.imageDataEdge2.data(), 0, nullptr, nullptr))
         fprintf(stderr, "Couldn't enqueue edge read\n");
 }
 
@@ -146,17 +134,17 @@ void Device::LoadImage(const char *path) {
     size_t newSize = dev.imageSizeX * dev.imageSizeY * 4;
 
     dev.imageData.resize(newSize);
-    dev.imageDataBlur.resize(newSize);
-    dev.imageDataEdge.resize(newSize);
+    dev.imageDataEdge2.resize(newSize);
+    dev.imageDataEdge1.resize(newSize);
 
     memcpy(dev.imageData.data(), data, newSize);
 
     stbi_image_free(data);
 }
 
-void Device::SaveImage(const char *pathBlur, const char *pathEdge) {
+void Device::SaveImage(const char *pathFirst, const char *pathSecond) {
     auto &dev = Get();
 
-    stbi_write_png(pathBlur, dev.imageSizeX, dev.imageSizeY, 4, dev.imageDataBlur.data(), 4 * dev.imageSizeX);
-    stbi_write_png(pathEdge, dev.imageSizeX, dev.imageSizeY, 4, dev.imageDataEdge.data(), 4 * dev.imageSizeX);
+    stbi_write_png(pathFirst, dev.imageSizeX, dev.imageSizeY, 4, dev.imageDataEdge1.data(), 4 * dev.imageSizeX);
+    stbi_write_png(pathSecond, dev.imageSizeX, dev.imageSizeY, 4, dev.imageDataEdge2.data(), 4 * dev.imageSizeX);
 }

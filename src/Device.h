@@ -5,6 +5,8 @@
 #ifndef MB_OPENCL_DEVICE_H
 #define MB_OPENCL_DEVICE_H
 
+#define CL_TARGET_OPENCL_VERSION 120
+
 #include <CL/cl.h>
 #include <vector>
 
@@ -20,18 +22,15 @@ class Device {
     cl_context clContext{};
     cl_command_queue clCommandQueue{};
     cl_program clProgram{};
-    cl_kernel clKernelBlur{};
     cl_kernel clKernelEdge{};
     cl_mem clMemSrc{};
-    cl_mem clMemBlurParam{};
-    cl_mem clMemDstBlur{};
-    cl_mem clMemDstEdge{};
+    cl_mem clMemDst{};
 
     int imageSizeX{}, imageSizeY{};
 
     std::vector<unsigned char> imageData;
-    std::vector<unsigned char> imageDataBlur;
-    std::vector<unsigned char> imageDataEdge;
+    std::vector<unsigned char> imageDataEdge2;
+    std::vector<unsigned char> imageDataEdge1;
 
 public:
 
@@ -45,11 +44,11 @@ public:
 
     static Device &Get();
 
-    static void ExecuteProgram(const char *path, int blurParam);
+    static void ExecuteProgram(const char *path, int blurParamFirst, int blurParamSecond);
 
     static void LoadImage(const char *path);
 
-    static void SaveImage(const char *pathBlur, const char *pathEdge);
+    static void SaveImage(const char *pathFirst, const char *pathSecond);
 };
 
 
