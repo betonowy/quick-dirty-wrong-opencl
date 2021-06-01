@@ -56,7 +56,10 @@ float blur(uint id, __global uchar* data, int blurSize) {
 }
 
 float edgeDetector(uint id, __global uchar* data, int blurSize) {
-    float color = 0;
+    float color = data[id];
+
+    float colorMin = 255;
+    float colorMax = 0;
 
     struct ivec2 coord = getCoordForId(id);
 
@@ -67,16 +70,13 @@ float edgeDetector(uint id, __global uchar* data, int blurSize) {
         tempCoord.x += kernelCoords[i].x;
         tempCoord.y += kernelCoords[i].y;
 
-        color += blur(getIdForCoordComp(tempCoord, comp), data, blurSize) * kernelValues[i];
+        color = blur(getIdForCoordComp(tempCoord, comp), data, blurSize);
+
+        colorMin = min(color, colorMin);
+        colorMax = max(color, colorMax);
     }
 
-    if (color < 0) color = -color;
-
-    if (color > 255) color = 255;
-
-    if (blurSize == 0) return color / 1.5;
-
-    return color * blurSize;
+    return (colorMax - colorMin) * sqrt((float) blurSize + 1);
 }
 
 __kernel void processEdge(__global uchar* imageData, __global uchar* outData, __global int* blurSize) {
